@@ -1,0 +1,15 @@
+node_modules
+.next
+.env.local
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+.eval
+.DS_Store
+
+# Working material, not part of the submission
+design/
+design-prompt.md
+pm-agent-vision.md
+test-assignment-ai-developer.md
+demo-script.md

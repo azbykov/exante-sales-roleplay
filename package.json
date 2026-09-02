@@ -1,0 +1,29 @@
+{
+  "name": "exante-sales-simulator",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "eval": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/eval/index.ts",
+    "dev:demo": "NEXT_PUBLIC_DEMO=1 next dev",
+    "build:demo": "NEXT_PUBLIC_DEMO=1 next build"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^4.0.55",
+    "ai": "^7.0.89",
+    "next": "^15.5.4",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "server-only": "^0.0.1",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "tsx": "^4.23.13",
+    "typescript": "^5.7.0"
+  }
+}

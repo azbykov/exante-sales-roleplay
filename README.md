@@ -1,0 +1,182 @@
+# EXANTE — sales simulator (vertical slice)
+
+A vertical slice with one registered persona and one scenario: a dialogue to its
+resolution and a debrief at the end. The runtime already supports a library of
+personas and scenarios without copying prompts or API handlers.
+
+The salesperson talks to an AI client that behaves according to a written
+persona and decides for itself how the conversation ends. After the resolution,
+a separate pass over the transcript assembles the report: a turning point, one
+specific action for next time, and three scores with quotes as evidence.
+
+## Running it
+
+```bash
+npm install
+```
+
+No API key at hand? Go straight to the recorded session — same routes, same
+state, same report, no model calls:
+
+```bash
+npm run dev:demo
+```
+
+Open http://localhost:3000 and press *Play the demo*.
+
+For a live conversation, put one key — either of the two — into `.env.local`
+(the file is in `.gitignore`):
+
+```bash
+echo 'OPENAI_API_KEY=sk-...' > .env.local
+```
+
+With `OPENAI_API_KEY` present, requests go to OpenAI directly. Without it, they
+go through the [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) using
+`AI_GATEWAY_API_KEY`.
+
+```bash
+npm run dev
+```
+
+Open http://localhost:3000 — the client speaks first.
+
+## What is inside
+
+```
+lib/session.ts     the two use cases: runTurn and runReport, called by the API and by the checks alike
+lib/state.ts       the vocabulary shared with the browser: client state, outcomes, resolution reasons
+lib/llm.ts         which models are used: avatar and evaluator are set separately
+lib/scenario.ts    the Persona, ScenarioArtifact and assembled Scenario types
+lib/content/personas       persona files: character and initial state
+lib/content/scenarios      exercise files referencing a personaId
+lib/content/registry.ts    registration and server-side persona + scenario assembly
+lib/content/product-facts.ts  checkable product facts the evaluator verifies claims against
+lib/rubric.ts      three dimensions with scale anchors + compliance rules
+lib/avatar.ts      avatar prompt assembly and the turn schema
+lib/evaluator.ts   the report schema and the evaluator prompt
+app/api/turn       a dialogue turn: reply + client state + conversation state
+app/api/report     evaluation of the transcript after the resolution
+app/api/scenarios  a safe catalogue for the UI, without the character's hidden fields
+app/page.tsx       the whole interface: dialogue, report, session history
+scripts/eval       scenario runs: npm run eval
+```
+
+Personas, scenarios and the rubric are data, not text inside a prompt. To add a
+client, create a file in `lib/content/personas/`, a scenario carrying its
+`personaId` in `lib/content/scenarios/`, and register both objects in
+`lib/content/registry.ts`. The Character and Analyzer prompts, the API and the
+UI stay untouched.
+
+## Decisions visible in the code
+
+- **The domain has one implementation.** `runTurn` and `runReport` in
+  [lib/session.ts](lib/session.ts) are the whole product; the API routes are
+  adapters that parse the request and map the failure, and `npm run eval` drives
+  the same two functions. A change to the dialogue loop cannot pass the checks
+  unnoticed, because there is no second copy of it to change.
+- **The prompts cannot reach the browser.** `lib/avatar.ts`, `lib/evaluator.ts`
+  and the content registry are marked `server-only`, so an import from a client
+  component fails the build rather than shipping the character's instructions
+  and the hidden need to the salesperson. What the UI is allowed to see is the
+  projection in `listScenarios()`.
+- **Requests are validated, and maxTurns is a limit.** Both routes parse the body
+  with zod before anything is spent on a model call, and a conversation past
+  `maxTurns` is refused. If the model still returns `open` on the closing turn,
+  the code lands it as `no_deal` / `max_turns` — the same discipline as
+  `clampState`: what the prompt asks for, the code guarantees.
+- **The model is a parameter, not a dependency.** Next.js + AI SDK: the provider
+  is chosen by which key is present, the model is a string in
+  [lib/llm.ts](lib/llm.ts) or an environment variable. The avatar and the
+  evaluator are configured separately: the first needs speed, the second depth.
+- **The avatar declares the resolution**, not a button and not a turn counter:
+  on every turn the model returns both the reply and the state (`open` / `deal`
+  / `no_deal` / `walkout`). The final turn carries a typed `resolutionReason`;
+  the schema checks that the reason matches the outcome. At `maxTurns` the
+  conversation is landed deliberately.
+- **Evaluation is a separate pass.** The avatar does not know the rubric, the
+  evaluator takes no part in the conversation. Otherwise the persona starts
+  playing to the score.
+- **Accuracy about the product is checked against a list of facts**, not against
+  the model's memory: [product-facts.ts](lib/content/product-facts.ts) is an
+  artifact shared by all scenarios, assembled from public sources. A claim that
+  contradicts a fact is an error; a claim that is not in the list is unverified
+  and never lowers the score.
+- **Every observed skill requires a quote** from the transcript — a score
+  without evidence cannot be disputed. If there was no material to score, the
+  Analyzer returns `observed: false` and `score: null` rather than inventing an
+  average.
+- **Compliance is not averaged** with the other dimensions: a promise of returns
+  is a separate flag, and good Discovery does not cancel it out.
+- **Client state** (trust, interest, patience) is updated by the avatar on every
+  turn, and the allowed band (no more than two points per turn) is enforced in
+  code rather than merely requested in the prompt. During the conversation it is
+  hidden — a visible trust counter turns
+  practice into a game with numbers. In the report it becomes a trace: where the
+  conversation went down. The same trace is handed to the evaluator as grounds
+  for the turning point.
+- **Session history** lives in `localStorage` together with `personaId`,
+  `scenarioId` and their versions: a trend is compared only within one version
+  of a scenario, and it works without a backend or accounts.
+
+## Demo mode
+
+```bash
+npm run dev:demo
+```
+
+No key needed: instead of model calls, a recorded session is substituted
+([lib/content/demo/](lib/content/demo/active-trader-switching.ts)). A "Play the
+demo" button appears in the header — a five-line conversation plays itself and
+ends with a report. It exists for two things: showing the product to someone
+without a key, and recording a video where every run is identical.
+
+The recorded data passes the same schemas as a live model response, and loading
+fails if they diverge — the mock cannot quietly go stale. The execution path is
+the same one: only the source of the reply is swapped, while the routes, the
+client state, the session history and the report work exactly as they do live.
+
+## Checks
+
+```bash
+npm run eval
+```
+
+Synthetic "salespeople" play the scenario through: an attempt to break the
+avatar out of role, a neutral greeting, pressure, promising returns, false
+product claims, pitching without questions, doing it properly. Two more probes
+run on a single line: a greeting must not move the client's state, and rudeness
+cannot improve it. Properties of the conversation are checked rather than exact
+text — anything arguable goes to an LLM judge. Statuses are pass / fail / warn /
+error, and results are compared with the previous run.
+
+The transcript of a failing probe is saved to `.eval/`. A single probe can be
+run on its own:
+
+```bash
+npm run eval -- pressure
+```
+
+The run makes real API calls and costs money.
+
+## Boundaries of the slice
+
+Deliberately absent: an admin UI, authentication, server-side storage, voice,
+and the "Assessment" mode for the company. The library framework is there, but
+in this slice it holds one persona and one scenario. The reasoning behind these
+boundaries is in section 4 of the accompanying document.
+
+EXANTE product facts are taken from public sources and simplified: a simulator
+needs plausibility, not the accuracy of a product catalogue.
+
+## Deployment
+
+```bash
+vercel
+```
+
+No key is needed in the project variables: on Vercel the gateway authorises
+requests with the deployment's OIDC token (`VERCEL_OIDC_TOKEN`), which the code
+picks up by itself. For local development the token can be pulled with
+`vercel env pull`, but it lives for about 12 hours, so a plain
+`AI_GATEWAY_API_KEY` is more reliable for repeatable runs.

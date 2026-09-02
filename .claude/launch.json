@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "simulator",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000,
+      "autoPort": true
+    },
+    {
+      "name": "simulator-demo",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:demo"],
+      "port": 3001,
+      "autoPort": true
+    }
+  ]
+}
