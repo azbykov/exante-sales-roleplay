@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { routes } from "@/lib/catalogue";
 import { Chips } from "@/app/components/chips";
 import { clock } from "@/app/format";
+import { traceIndexOf } from "@/app/thread";
 import { useSession } from "@/app/session";
 
 /** The conversation. Its URL names the session, so a reload resumes it. */
@@ -116,11 +117,7 @@ export default function ChatPage() {
         <div className="chat-body">
           <div className="thread">
             {turns.map((turn, index) => {
-              // State appears only after the client replies: count its ordinal number.
-              const clientIndex =
-                turn.role === "assistant"
-                  ? turns.slice(0, index).filter((t) => t.role === "assistant").length - 1
-                  : -1;
+              const clientIndex = traceIndexOf(turns, index);
               const state = clientIndex >= 0 ? trace[clientIndex] : undefined;
 
               return (

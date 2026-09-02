@@ -44,8 +44,16 @@ export function demoLines(scenarioId: string): string[] {
   return SESSIONS[scenarioId]?.rmLines ?? [];
 }
 
-/** A pause so the recording shows waiting for a reply, not instant substitution. */
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * A pause so the recording shows waiting for a reply, not instant substitution.
+ * Tests set DEMO_PAUSE_SCALE=0: they use the recorded session as a fixture, and
+ * waiting out a performance for a video is not part of what they check.
+ */
+const PAUSE_SCALE = Number(process.env.DEMO_PAUSE_SCALE ?? "1");
+const pause = (ms: number) =>
+  PAUSE_SCALE > 0
+    ? new Promise((resolve) => setTimeout(resolve, ms * PAUSE_SCALE))
+    : Promise.resolve();
 
 export async function demoTurn(scenarioId: string, rmTurnIndex: number): Promise<AvatarTurn> {
   const session = SESSIONS[scenarioId];
@@ -61,6 +69,6 @@ export async function demoReport(scenarioId: string): Promise<Report> {
   const session = SESSIONS[scenarioId];
   if (!session) throw new Error(`No recorded session for scenario ${scenarioId}`);
 
-  await pause(1200);
+  await pause(1_200);
   return session.report;
 }

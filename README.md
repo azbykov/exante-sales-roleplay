@@ -75,23 +75,28 @@ lib/session.ts     the conversation: open one, play a line, build the debrief; r
 lib/session-store.ts  where a conversation lives while it is played — swap this file for Redis
 lib/state.ts       the vocabulary shared with the browser: client state, outcomes, resolution reasons
 lib/catalogue.ts   what the browser receives from the API, plus the route and endpoint tables
-lib/http.ts        the two helpers every route is built from: parse the body, map the failure
 lib/llm.ts         which models are used: avatar and evaluator are set separately
-lib/scenario.ts    the Persona, ScenarioArtifact and assembled Scenario types
-lib/content/personas       persona files: character and initial state
-lib/content/scenarios      exercise files referencing a personaId
-lib/content/registry.ts    registration and server-side persona + scenario assembly
-lib/content/product-facts.ts  checkable product facts the evaluator verifies claims against
-lib/rubric.ts      three dimensions with scale anchors + compliance rules
 lib/avatar.ts      avatar prompt assembly and the turn schema
 lib/evaluator.ts   the report schema and the evaluator prompt
+lib/rubric.ts      three dimensions with scale anchors + compliance rules
+lib/scenario.ts    the Persona, ScenarioArtifact and assembled Scenario types
+lib/http.ts        the two helpers every route is built from: parse the body, map the failure
+lib/content/personas          persona files: character and initial state
+lib/content/scenarios         exercise files referencing a personaId
+lib/content/registry.ts       registration and server-side persona + scenario assembly
+lib/content/product-facts.ts  checkable product facts the evaluator verifies claims against
+
 app/api/scenarios  a safe catalogue for the UI, without the character's hidden fields
 app/api/sessions   open a conversation; then GET / DELETE, /turns and /report on its id
 app/session.tsx    the browser's side of a session: an id and a view of what the server has
-app/page.tsx       /  — persona selection, the only screen that opens a session
-app/s/[sessionId]           /s/:sessionId — the conversation
+app/page.tsx                /                     — persona selection, the only screen that opens a session
+app/s/[sessionId]           /s/:sessionId         — the conversation
 app/s/[sessionId]/debrief   /s/:sessionId/debrief — its report
-scripts/eval       scenario runs: npm run eval
+app/thread.ts      which trace entry belongs to which turn
+app/optimistic.ts  the salesperson's line, shown before the server has seen it
+
+tests/             npm test      — schemas, session lifecycle, API handlers, helpers
+scripts/eval       npm run eval  — scenario runs against a live model
 ```
 
 Personas, scenarios and the rubric are data, not text inside a prompt. To add a
@@ -108,9 +113,9 @@ The long form of this list, with the alternatives that were rejected, is
 
 - **The domain has one implementation.** `runTurn` and `runReport` in
   [lib/session.ts](lib/session.ts) are the whole product; the API routes are
-  adapters that parse the request and map the failure, and `npm run eval` drives
-  the same two functions. A change to the dialogue loop cannot pass the checks
-  unnoticed, because there is no second copy of it to change.
+  adapters that parse the request and map the failure, and both `npm test` and
+  `npm run eval` drive the same functions. A change to the dialogue loop cannot
+  pass the checks unnoticed, because there is no second copy of it to change.
 - **The prompts cannot reach the browser.** `lib/avatar.ts`, `lib/evaluator.ts`
   and the content registry are marked `server-only`, so an import from a client
   component fails the build rather than shipping the character's instructions
@@ -190,6 +195,35 @@ client state, the session history and the report work exactly as they do live.
 
 ## Checks
 
+Two suites, for two different kinds of thing that break.
+
+### Tests — the code
+
+```bash
+npm test
+```
+
+Fast, free and deterministic: schemas and their invariants, the clamped state
+band, the content projection, the session lifecycle and its guards, the API
+handlers, error mapping and the client-side helpers. No new dependencies —
+`node:test` run through `tsx`, which was already here.
+
+The dialogue loop is exercised end to end against the recorded session
+(`NEXT_PUBLIC_DEMO=1`), so the same code path a live conversation takes is
+covered without a model call. The suite pins `TZ` on purpose: one of the date
+assertions only has teeth west of Greenwich.
+
+The test worth keeping if every other one went: `listScenarios()` carries none of
+the answers to the exercise. If that projection ever leaks `hiddenNeed`, the
+salesperson can read the exercise out of the browser before playing it.
+
+What is *not* covered: the React screens. That needs a DOM and a component
+testing library, which is a dependency decision rather than a coverage one; the
+logic with invariants in it was pulled out into plain functions
+(`app/thread.ts`, `app/optimistic.ts`) and is tested there.
+
+### Eval — the prompts
+
 ```bash
 npm run eval
 ```
@@ -209,7 +243,8 @@ run on its own:
 npm run eval -- pressure
 ```
 
-The run makes real API calls and costs money.
+Unlike `npm test`, this run makes real API calls, costs money and is not
+deterministic — which is exactly why the two are separate commands.
 
 What these probes are for, and what a check on a non-deterministic system can
 and cannot prove, is
@@ -217,10 +252,13 @@ and cannot prove, is
 
 ## Boundaries of the slice
 
-Deliberately absent: an admin UI, authentication, server-side storage, voice,
-and the "Assessment" mode for the company. The library framework is there, but
-in this slice it holds one persona and one scenario. The reasoning behind each
-cut is in
+Deliberately absent: an admin UI, accounts and authentication, durable shared
+storage, voice, and the "Assessment" mode for the company. The conversation is
+held on the server, but in a map in the process — enough for one instance, and
+the one file to swap for Redis. The trend across sessions stays in
+`localStorage`, which is what Practice promises: it belongs to one person and
+one browser. The library framework is there, but in this slice it holds one
+persona and one scenario. The reasoning behind each cut is in
 [What I'm not doing and why](exante-sales-simulator.md#what-im-not-doing-and-why),
 split into [product](exante-sales-simulator.md#product),
 [engineering of the slice](exante-sales-simulator.md#engineering-of-the-slice)

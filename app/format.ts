@@ -17,9 +17,19 @@ export function plural(n: number, one: string): string {
   return n === 1 ? one : `${one}s`;
 }
 
-export function formatDay(iso: string): string {
-  const today = new Date().toISOString().slice(0, 10);
-  if (iso === today) return "today";
-  const date = new Date(iso);
+/** The local calendar day, as YYYY-MM-DD. What history entries are stamped with. */
+export function todayISO(now: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/**
+ * A stored day, for the trend row. The date is parsed with an explicit time:
+ * bare "2026-09-02" is read as UTC midnight, which renders as the day before
+ * anywhere west of Greenwich.
+ */
+export function formatDay(iso: string, now: Date = new Date()): string {
+  if (iso === todayISO(now)) return "today";
+  const date = new Date(`${iso}T00:00:00`);
   return `${MONTHS[date.getMonth()]} ${date.getDate()}`;
 }

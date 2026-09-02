@@ -9,6 +9,8 @@ import {
 } from "@/lib/catalogue";
 import type { ConversationState } from "@/lib/state";
 import type { Report } from "@/lib/evaluator";
+import { todayISO } from "./format";
+import { withPendingLine, withoutPendingLine } from "./optimistic";
 
 /**
  * The browser's side of a session.
@@ -141,7 +143,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   function remember(view: PublicSession, report: Report) {
     const entry: PastSession = {
-      date: new Date().toISOString().slice(0, 10),
+      date: todayISO(),
       personaId: view.scenario.persona.id,
       personaVersion: view.scenario.persona.version,
       scenarioId: view.scenario.id,
@@ -171,47 +173,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  /**
-   * The salesperson's line is shown before the server has seen it.
-   *
-   * A turn is a model call and takes seconds; waiting for it to echo the line
-   * back makes the interface feel like it swallowed what was typed. So the line
-   * is appended locally, and the answer replaces that view when it lands.
-   *
-   * A confirmed transcript always ends with the client, because the avatar
-   * replies to every line. A trailing salesperson turn is therefore the
-   * optimistic one and nothing else — which is what makes taking it back safe.
-   */
-  function showLine(id: string, text: string) {
-    setSession((current) =>
-      current && current.id === id
-        ? { ...current, turns: [...current.turns, { role: "user", content: text }] }
-        : current,
-    );
-  }
-
-  function unshowLine(id: string) {
-    setSession((current) => {
-      if (!current || current.id !== id) return current;
-      if (current.turns.at(-1)?.role !== "user") return current;
-      return { ...current, turns: current.turns.slice(0, -1) };
-    });
-  }
-
   async function sendLine(id: string, text: string) {
     setInput("");
     setBusy(true);
     setError("");
     setFailed(null);
     setReportError("");
-    showLine(id, text);
+    setSession((current) => (current?.id === id ? withPendingLine(current, text) : current));
 
     let view: PublicSession;
     try {
       view = await post<PublicSession>(api.turns(id), { text });
     } catch (err) {
       // The server never recorded it, so the screen must not keep it either.
-      unshowLine(id);
+      setSession((current) => (current?.id === id ? withoutPendingLine(current) : current));
       setError(err instanceof Error ? err.message : "The line was not sent");
       setFailed({ text });
       setBusy(false);

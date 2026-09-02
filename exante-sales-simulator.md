@@ -431,11 +431,37 @@ debrief, not as a level.
 ## 4. How we know it works — and keeps working
 
 What changes here is mostly not code but prompts, artifacts and the rubric.
-Ordinary unit tests do not catch that, so there are three levels.
+Ordinary unit tests do not catch that on their own, so there are three levels.
 
-**Level 1 — deterministic tests.** Prompt assembly from an artifact, response
-schema validity, the forced landing at `maxTurns`, behaviour on an API error.
-Cheap and fast; catches code regressions.
+**Level 1 — deterministic tests** (`npm test`). Response schemas and the
+invariants inside them, the clamped state band, the public content projection,
+the session lifecycle and its guards, the turn limit, the API handlers, error
+mapping. A hundred-odd assertions in under a second, with no model call, no
+network and no test dependency added: `node:test` run through the `tsx` that was
+already there.
+
+The dialogue loop is covered against the recorded session rather than a mock.
+Demo mode already substitutes a recorded answer for the model, so a test drives
+the same code path a live conversation takes — the loop, the store, the guards —
+and only the source of the reply differs.
+
+Two of these tests are worth more than the rest. One asserts that the public
+catalogue carries none of the answers to the exercise: if that projection ever
+leaks `hiddenNeed`, the salesperson can read the exercise out of the browser
+before playing it. The other asserts that a confirmed transcript always ends with
+the client — the invariant the interface relies on when it takes back a line the
+server refused.
+
+**Green is not the same as covered.** The suite was checked by breaking things on
+purpose: leaking the hidden need into the catalogue, widening the state band from
+two points to three, removing the guard that stops a resolved conversation
+taking more lines, reverting a date fix. Each mutation failed the tests that
+claim to watch it. A suite that stays green under those is decoration, and it is
+cheaper to find that out deliberately than in production.
+
+What level 1 cannot catch is the thing that actually breaks most often here:
+what changes is prompts, artifacts and the rubric, and no assertion about a
+function sees a persona that has started answering out of character.
 
 **Level 2 — scenario runs** (`npm run eval`). Scripted "salespeople" play the
 scenario through, and expectations are checked automatically. Exact text is not
@@ -509,9 +535,10 @@ their own run per language.
 broke), share of reports without a valid quote (evaluator degradation), score
 distribution per dimension, sessions per user.
 
-**What the slice implements:** level 2 in full — nine probes, a judge, statuses,
-comparison with the previous run. Levels 1 and 3 are described but not built:
-unit tests catch less here than scenario runs, and calibration needs people.
+**What the slice implements:** levels 1 and 2 in full — a hundred-odd
+deterministic assertions, and nine scenario probes with a judge, statuses and a
+comparison with the previous run. Level 3 is described but not built:
+calibration needs labelled transcripts and people to label them, not code.
 
 ---
 
@@ -599,10 +626,6 @@ debrief: neither the resolution, nor the rubric, nor the report depends on it.
 than a measurement, and that is exactly how it is presented to the salesperson.
 It needs transcripts labelled by training specialists — people and time, not
 code.
-
-**Deterministic tests (level 1).** They are the cheapest thing to write and they
-catch the least here: what breaks is not functions but prompts, artifacts and
-the rubric. That is caught by level 2, which is implemented in full.
 
 **Production metrics.** Walkout rate per scenario, share of reports without a
 valid quote, score distribution — described, but there is nothing to measure:
