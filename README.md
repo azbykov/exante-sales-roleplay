@@ -1,5 +1,8 @@
 # EXANTE — sales simulator (vertical slice)
 
+Live at **[exante-sales-roleplay.vercel.app](https://exante-sales-roleplay.vercel.app)** — nothing to install and no
+key to supply; the client speaks first.
+
 A vertical slice with one registered persona and one scenario: a dialogue to its
 resolution and a debrief at the end. The runtime already supports a library of
 personas and scenarios without copying prompts or API handlers.
@@ -20,7 +23,9 @@ The product and architecture write-up is
   [life after the tenth session](exante-sales-simulator.md#life-after-the-tenth-session),
   [why anyone would use it voluntarily](exante-sales-simulator.md#why-anyone-would-use-it-voluntarily),
   and [what grows around the core](exante-sales-simulator.md#what-grows-around-the-core).
-- [Architecture](exante-sales-simulator.md#architecture) — [how the avatar works](exante-sales-simulator.md#1-how-the-avatar-works)
+- [Architecture](exante-sales-simulator.md#architecture) —
+  [where the conversation lives](exante-sales-simulator.md#the-session-where-the-conversation-lives),
+  [how the avatar works](exante-sales-simulator.md#1-how-the-avatar-works)
   and its [system fields and invariants](exante-sales-simulator.md#system-fields-and-invariants),
   [personas and scenarios as artifacts](exante-sales-simulator.md#2-personas-and-scenarios-as-artifacts),
   [where the score comes from](exante-sales-simulator.md#3-where-the-score-comes-from-and-why-it-can-be-trusted),
@@ -66,8 +71,11 @@ Open http://localhost:3000 — the client speaks first.
 ## What is inside
 
 ```
-lib/session.ts     the two use cases: runTurn and runReport, called by the API and by the checks alike
+lib/session.ts     the conversation: open one, play a line, build the debrief; runTurn and runReport underneath
+lib/session-store.ts  where a conversation lives while it is played — swap this file for Redis
 lib/state.ts       the vocabulary shared with the browser: client state, outcomes, resolution reasons
+lib/catalogue.ts   what the browser receives from the API, plus the route and endpoint tables
+lib/http.ts        the two helpers every route is built from: parse the body, map the failure
 lib/llm.ts         which models are used: avatar and evaluator are set separately
 lib/scenario.ts    the Persona, ScenarioArtifact and assembled Scenario types
 lib/content/personas       persona files: character and initial state
@@ -77,10 +85,12 @@ lib/content/product-facts.ts  checkable product facts the evaluator verifies cla
 lib/rubric.ts      three dimensions with scale anchors + compliance rules
 lib/avatar.ts      avatar prompt assembly and the turn schema
 lib/evaluator.ts   the report schema and the evaluator prompt
-app/api/turn       a dialogue turn: reply + client state + conversation state
-app/api/report     evaluation of the transcript after the resolution
 app/api/scenarios  a safe catalogue for the UI, without the character's hidden fields
-app/page.tsx       the whole interface: dialogue, report, session history
+app/api/sessions   open a conversation; then GET / DELETE, /turns and /report on its id
+app/session.tsx    the browser's side of a session: an id and a view of what the server has
+app/page.tsx       /  — persona selection, the only screen that opens a session
+app/s/[sessionId]           /s/:sessionId — the conversation
+app/s/[sessionId]/debrief   /s/:sessionId/debrief — its report
 scripts/eval       scenario runs: npm run eval
 ```
 
@@ -111,6 +121,21 @@ The long form of this list, with the alternatives that were rejected, is
   `maxTurns` is refused. If the model still returns `open` on the closing turn,
   the code lands it as `no_deal` / `max_turns` — the same discipline as
   `clampState`: what the prompt asks for, the code guarantees.
+- **The conversation belongs to the server.** A session is opened by
+  `POST /api/sessions`; after that the browser holds an id, a line is posted on
+  its own, and the debrief request carries no body. The outcome the evaluator is
+  told to keep is the one the avatar declared and the store recorded — there is
+  no field for a client to send one in, so `deal` cannot be typed into a failed
+  conversation. `maxTurns` is checked against the stored transcript for the same
+  reason. The store is a map in the process behind a `SessionStore` interface:
+  the one file to replace with Redis or Vercel KV, which a serverless deployment
+  needs. The reasoning is in
+  [The session](exante-sales-simulator.md#the-session-where-the-conversation-lives).
+- **Each screen is a URL, and the URL names the conversation.** Selection,
+  conversation and debrief are three routes keyed by session id, so a reload
+  resumes the exchange where it stopped and a link addresses one specific
+  conversation. A session that has expired or been ended says so and offers the
+  picker, rather than showing an empty shell.
 - **The model is a parameter, not a dependency.** Next.js + AI SDK: the provider
   is chosen by which key is present, the model is a string in
   [lib/llm.ts](lib/llm.ts) or an environment variable. The avatar and the
@@ -205,6 +230,10 @@ EXANTE product facts are taken from public sources and simplified: a simulator
 needs plausibility, not the accuracy of a product catalogue.
 
 ## Deployment
+
+Deployed at [exante-sales-roleplay.vercel.app](https://exante-sales-roleplay.vercel.app), running against a live
+model rather than the recorded session: every turn is a real model call, so a
+reply takes a few seconds.
 
 ```bash
 vercel

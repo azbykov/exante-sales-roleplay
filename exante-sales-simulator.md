@@ -172,17 +172,21 @@ flowchart TB
         E["Evaluator<br/>observed + score + evidence<br/>compliance kept separate"]
     end
 
-    H[("Session history")]
+    S[("Session store<br/>transcript, state trace, outcome")]
+    H[("Session history<br/>localStorage, trend only")]
 
-    UI -->|RM reply| A
+    UI -->|RM line + session id| S
+    S -->|transcript| A
     PR -->|personaId| SR
     SR -->|assembled Scenario| A
-    A -->|open| UI
-    A -->|deal / no_deal / walkout| E
+    A -->|reply + clientState + outcome| S
+    S -->|open| UI
+    S -->|deal / no_deal / walkout| E
     R --> E
     F --> E
-    E -->|report| UI
-    E --> H
+    E -->|report| S
+    S -->|report| UI
+    S --> H
     H -->|trend| UI
 ```
 
@@ -203,6 +207,49 @@ they are configured with separate models and reasoning levels in `lib/llm.ts`.
 The practical consequence: the evaluator can be calibrated on a stronger model
 without making every dialogue turn more expensive.
 
+## The session: where the conversation lives
+
+The conversation belongs to the server. A session is opened by
+`POST /api/sessions`, and from then on the browser holds an id and nothing else:
+each line is `POST /api/sessions/:id/turns` carrying that line alone, and the
+debrief is `POST /api/sessions/:id/report` carrying no body at all.
+
+This started as a URL problem and turned out to be an integrity one. The first
+version kept the transcript, the state trace and the outcome in React state and
+posted all three back with every request. That made three things true at once,
+and all three were wrong:
+
+- **The score rested on the client's word.** The evaluator is deliberately told
+  to copy the outcome rather than derive it again — that is what keeps technique
+  and result apart (section 3). But an outcome that arrives in a request body is
+  an outcome anyone can type, and `deal` after a failed conversation cost one
+  line of `curl`. The invariant was real and the input to it was not.
+- **A reload lost the conversation.** State that lives only in a tab dies with
+  the tab.
+- **A URL could not name a conversation.** At best it named the scenario, so a
+  link was worth nothing to anyone but the person who already had the session
+  open in that tab.
+
+Now the avatar's declared outcome is written into the session as it happens, and
+the evaluator is handed the copy the server recorded. The client cannot state an
+outcome because there is no field to state it in. The same move makes
+`maxTurns` real — it is checked against the stored transcript rather than the
+submitted one — and gives each screen an address: `/s/:sessionId` is the
+conversation, `/s/:sessionId/debrief` is its report.
+
+**What the store is.** In the slice it is a `Map` in the process, behind a
+`SessionStore` interface, with a TTL and a cap. That is honest for a single
+instance and is the one file to replace with Redis or Vercel KV: on a serverless
+deployment each request may reach a different instance, and an in-process map
+loses sessions between them. Nothing above the interface changes when it is
+swapped.
+
+**What it is not.** There are still no accounts. A session id is a capability:
+whoever holds the URL can continue that conversation and read its debrief. For
+Practice that is the right trade — no login stands between a salesperson and a
+rehearsal — and it is exactly what Assessment cannot accept, which is one more
+reason the two modes are separated rather than blended.
+
 ## 1. How the avatar works
 
 Three parts, each replaceable on its own:
@@ -214,7 +261,7 @@ Three parts, each replaceable on its own:
 | **Registry** | Validates the `personaId` reference and assembles the full `Scenario` for the runtime | `lib/content/registry.ts` |
 | **Prompt builder** | A deterministic function, artifact → system prompt. One for every persona | `lib/avatar.ts` |
 | **Client state** | Three 1-5 scales — trust, interest, patience. Initial values come from the artifact; the avatar updates them each turn | `lib/avatar.ts` |
-| **Turn** | Structured response: reply + client state + outcome + resolution reason | `app/api/turn` |
+| **Turn** | Structured response: reply + client state + outcome + resolution reason | `lib/session.ts`, served by `app/api/sessions/[sessionId]/turns` |
 
 The key decision: **the avatar declares the resolution**, not a "finish" button
 and not a turn counter. On every turn the model returns `open` / `deal` /
@@ -277,7 +324,7 @@ schema validates not just the presence of the field but the pair as a whole —
 
 | Field | Purpose | Invariant |
 |---|---|---|
-| `outcome` | The outcome fixed by Character | The Analyzer copies it rather than deciding again |
+| `outcome` | The outcome Character declared, as the server recorded it | The Analyzer copies it rather than deciding again, and no client can supply it |
 | `resolutionReason` | The fixed reason | Also copied, and validated together with the outcome |
 | `turningPoint` | One key line and the observable change after it | The quote must come from the transcript |
 | `recommendation` | The next action for another attempt | One specific behaviour, not general advice |
@@ -347,7 +394,7 @@ slice; artifacts live in the repository and go through ordinary code review.
 
 ## 3. Where the score comes from, and why it can be trusted
 
-Trust rests on five pillars, four of them in code:
+Trust rests on six pillars, five of them in code:
 
 1. **Scale anchors.** The rubric defines what 1, 3 and 5 mean for each
    dimension. A score means the same thing across sessions — otherwise a trend
@@ -370,6 +417,10 @@ Trust rests on five pillars, four of them in code:
    difficult client you can work well and not close. Compliance goes the other
    way — it is pulled out of the average into its own flag, because a critical
    breach must not be cancelled out by good Discovery.
+6. **The transcript and the outcome are the server's.** The evaluator scores the
+   conversation that happened, on the outcome the avatar declared, because both
+   are read from the session store rather than from the request. An invariant
+   whose input the client supplies is not an invariant — see *The session*.
 
 **Calibration (outside the MVP, but without it the score cannot be called a
 measurement):** a golden set of transcripts labelled by training specialists;
@@ -510,12 +561,17 @@ changes the rubric, not the interface.
 
 ## Engineering of the slice
 
-**Authentication, accounts, server-side storage.** Session history lives in
-`localStorage`. For one person opening a prototype it makes no difference; for
-Assessment mode and team aggregates it is a precondition — so it was cut
-together with them. What the storage will be is deliberately left undecided: the
-choice is dictated by access rights — who may open whose report — and those
-appear only with Assessment.
+**Authentication and accounts.** The conversation itself is now held on the
+server (*The session*), but nobody has to sign in to hold one: a session id is a
+capability, and whoever has the URL has the conversation. That is right for
+Practice and impossible for Assessment, so accounts were cut together with it.
+
+**Durable, shared storage.** The session store is a map in the process behind an
+interface — enough for one instance, wrong for a serverless deployment, and one
+file to replace. The trend across sessions is a separate thing and still lives
+in `localStorage`: it belongs to one browser and one person, which is exactly
+what Practice promises. Making it durable means deciding who may open whose
+report, and that question only appears with Assessment.
 
 **An admin UI and a populated library.** Artifacts live in the repository and go
 through ordinary code review. An editor is what a training specialist needs at

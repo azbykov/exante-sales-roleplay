@@ -53,7 +53,7 @@ export async function demoTurn(scenarioId: string, rmTurnIndex: number): Promise
 
   // Improvisation beyond the recording is unsupported: replay the last turn.
   const turn = session.avatarTurns[Math.min(rmTurnIndex, session.avatarTurns.length - 1)];
-  await pause(700);
+  await pause(3_000);
   return turn;
 }
 

@@ -9,9 +9,12 @@ import type { z } from "zod";
  * gateway failures so the caller is told what to fix instead of "try again".
  */
 export class RequestError extends Error {
-  constructor(message: string) {
+  readonly status: number;
+
+  constructor(message: string, status = 400) {
     super(message);
     this.name = "RequestError";
+    this.status = status;
   }
 }
 
@@ -28,7 +31,7 @@ function statusOf(e: unknown): number | undefined {
 /** A readable message instead of a stack trace: the simulator must not fail silently. */
 export function apiError(e: unknown): { message: string; status: number } {
   // A bad request is the caller's business and not an incident: no stack in the log.
-  if (e instanceof RequestError) return { message: e.message, status: 400 };
+  if (e instanceof RequestError) return { message: e.message, status: e.status };
 
   console.error(e);
 
