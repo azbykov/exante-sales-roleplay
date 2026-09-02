@@ -9,6 +9,28 @@ persona and decides for itself how the conversation ends. After the resolution,
 a separate pass over the transcript assembles the report: a turning point, one
 specific action for next time, and three scores with quotes as evidence.
 
+## The document behind it
+
+The product and architecture write-up is
+[exante-sales-simulator.md](exante-sales-simulator.md). Where this README says
+*what* the code does, that document says *why*:
+
+- [Vision](exante-sales-simulator.md#vision) — [who it is for](exante-sales-simulator.md#who-it-is-for-and-what-it-solves),
+  [the core](exante-sales-simulator.md#the-core) loop, [the report](exante-sales-simulator.md#the-report),
+  [life after the tenth session](exante-sales-simulator.md#life-after-the-tenth-session),
+  [why anyone would use it voluntarily](exante-sales-simulator.md#why-anyone-would-use-it-voluntarily),
+  and [what grows around the core](exante-sales-simulator.md#what-grows-around-the-core).
+- [Architecture](exante-sales-simulator.md#architecture) — [how the avatar works](exante-sales-simulator.md#1-how-the-avatar-works)
+  and its [system fields and invariants](exante-sales-simulator.md#system-fields-and-invariants),
+  [personas and scenarios as artifacts](exante-sales-simulator.md#2-personas-and-scenarios-as-artifacts),
+  [where the score comes from](exante-sales-simulator.md#3-where-the-score-comes-from-and-why-it-can-be-trusted),
+  and [how we know it works](exante-sales-simulator.md#4-how-we-know-it-works--and-keeps-working).
+- [What I'm not doing and why](exante-sales-simulator.md#what-im-not-doing-and-why) — the cut, in
+  [product](exante-sales-simulator.md#product), [engineering of the slice](exante-sales-simulator.md#engineering-of-the-slice)
+  and [trust in the score](exante-sales-simulator.md#trust-in-the-score).
+- [Questions and assumptions](exante-sales-simulator.md#questions-and-assumptions) — nine questions for
+  the client, and the assumption made instead of each answer.
+
 ## Running it
 
 ```bash
@@ -66,9 +88,13 @@ Personas, scenarios and the rubric are data, not text inside a prompt. To add a
 client, create a file in `lib/content/personas/`, a scenario carrying its
 `personaId` in `lib/content/scenarios/`, and register both objects in
 `lib/content/registry.ts`. The Character and Analyzer prompts, the API and the
-UI stay untouched.
+UI stay untouched — the reasoning is in
+[Personas and scenarios as artifacts](exante-sales-simulator.md#2-personas-and-scenarios-as-artifacts).
 
 ## Decisions visible in the code
+
+The long form of this list, with the alternatives that were rejected, is
+[Architecture](exante-sales-simulator.md#architecture).
 
 - **The domain has one implementation.** `runTurn` and `runReport` in
   [lib/session.ts](lib/session.ts) are the whole product; the API routes are
@@ -105,7 +131,8 @@ UI stay untouched.
 - **Every observed skill requires a quote** from the transcript — a score
   without evidence cannot be disputed. If there was no material to score, the
   Analyzer returns `observed: false` and `score: null` rather than inventing an
-  average.
+  average. What the score rests on is argued in
+  [Where the score comes from](exante-sales-simulator.md#3-where-the-score-comes-from-and-why-it-can-be-trusted).
 - **Compliance is not averaged** with the other dimensions: a promise of returns
   is a separate flag, and good Discovery does not cancel it out.
 - **Client state** (trust, interest, patience) is updated by the avatar on every
@@ -159,12 +186,20 @@ npm run eval -- pressure
 
 The run makes real API calls and costs money.
 
+What these probes are for, and what a check on a non-deterministic system can
+and cannot prove, is
+[How we know it works — and keeps working](exante-sales-simulator.md#4-how-we-know-it-works--and-keeps-working).
+
 ## Boundaries of the slice
 
 Deliberately absent: an admin UI, authentication, server-side storage, voice,
 and the "Assessment" mode for the company. The library framework is there, but
-in this slice it holds one persona and one scenario. The reasoning behind these
-boundaries is in section 4 of the accompanying document.
+in this slice it holds one persona and one scenario. The reasoning behind each
+cut is in
+[What I'm not doing and why](exante-sales-simulator.md#what-im-not-doing-and-why),
+split into [product](exante-sales-simulator.md#product),
+[engineering of the slice](exante-sales-simulator.md#engineering-of-the-slice)
+and [trust in the score](exante-sales-simulator.md#trust-in-the-score).
 
 EXANTE product facts are taken from public sources and simplified: a simulator
 needs plausibility, not the accuracy of a product catalogue.
