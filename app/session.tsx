@@ -171,17 +171,47 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  /**
+   * The salesperson's line is shown before the server has seen it.
+   *
+   * A turn is a model call and takes seconds; waiting for it to echo the line
+   * back makes the interface feel like it swallowed what was typed. So the line
+   * is appended locally, and the answer replaces that view when it lands.
+   *
+   * A confirmed transcript always ends with the client, because the avatar
+   * replies to every line. A trailing salesperson turn is therefore the
+   * optimistic one and nothing else — which is what makes taking it back safe.
+   */
+  function showLine(id: string, text: string) {
+    setSession((current) =>
+      current && current.id === id
+        ? { ...current, turns: [...current.turns, { role: "user", content: text }] }
+        : current,
+    );
+  }
+
+  function unshowLine(id: string) {
+    setSession((current) => {
+      if (!current || current.id !== id) return current;
+      if (current.turns.at(-1)?.role !== "user") return current;
+      return { ...current, turns: current.turns.slice(0, -1) };
+    });
+  }
+
   async function sendLine(id: string, text: string) {
     setInput("");
     setBusy(true);
     setError("");
     setFailed(null);
     setReportError("");
+    showLine(id, text);
 
     let view: PublicSession;
     try {
       view = await post<PublicSession>(api.turns(id), { text });
     } catch (err) {
+      // The server never recorded it, so the screen must not keep it either.
+      unshowLine(id);
       setError(err instanceof Error ? err.message : "The line was not sent");
       setFailed({ text });
       setBusy(false);
